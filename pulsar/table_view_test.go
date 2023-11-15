@@ -80,6 +80,65 @@ func TestTableView(t *testing.T) {
 	}
 }
 
+func TestTableViewWithJSONSchema(t *testing.T) {
+	jsonSchema := `{
+		"namespace": "example",
+		"type": "record",
+		"name": "example",
+		"fields": [
+		  {
+			"name": "field",
+			"type": "string"
+		  }
+		]
+	  }
+	  `
+
+	type Example struct {
+		Field string `json:"field"`
+	}
+
+	client, err := NewClient(ClientOptions{
+		URL: lookupURL,
+	})
+
+	assert.NoError(t, err)
+	defer client.Close()
+
+	topic := newTopicName()
+	schema, err := NewJSONSchemaWithValidation(jsonSchema, nil)
+	require.NoError(t, err)
+
+	// create producer
+	producer, err := client.CreateProducer(ProducerOptions{
+		Topic:  topic,
+		Schema: schema,
+	})
+	assert.NoError(t, err)
+	defer producer.Close()
+
+	_, err = producer.Send(context.Background(), &ProducerMessage{
+		Key:   "testKey",
+		Value: Example{"Hello pulsar"},
+	})
+	assert.NoError(t, err)
+
+	// create table view
+	var v Example
+	tv, err := client.CreateTableView(TableViewOptions{
+		Topic:           topic,
+		Schema:          schema,
+		SchemaValueType: reflect.TypeOf(v),
+	})
+	assert.NoError(t, err)
+	defer tv.Close()
+
+	value := tv.Get("testKey")
+	assert.IsType(t, Example{}, value)
+	wantValue := Example{"Hello pulsar"}
+	assert.Equal(t, wantValue, value)
+}
+
 func TestPublishNilValue(t *testing.T) {
 	client, err := NewClient(ClientOptions{
 		URL: lookupURL,
